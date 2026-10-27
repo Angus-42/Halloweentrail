@@ -88,6 +88,11 @@ body{
   color:var(--line);text-shadow:0 0 24px var(--line-soft),0 0 4px var(--line)}
 #who{font-family:var(--display);font-weight:500;font-size:clamp(14px,2.4vw,26px);letter-spacing:.18em;text-transform:uppercase;color:var(--fg)}
 #meta{font-size:clamp(11px,1.4vw,14px);letter-spacing:.14em;color:var(--dim)}
+#stage.scanning #sub{font-family:var(--display);font-weight:700;font-size:clamp(17px,2.8vw,30px);letter-spacing:.16em;color:var(--line);text-shadow:0 0 12px var(--line-soft);min-height:1.3em}
+#directive{font-family:var(--display);font-weight:900;font-size:clamp(22px,4.6vw,54px);letter-spacing:.12em;text-transform:uppercase;line-height:1.1;text-wrap:balance;
+  color:var(--warn);text-shadow:0 0 22px rgba(255,177,59,.45),0 0 4px var(--warn);animation:pulse 1s ease-in-out infinite;padding-block:4px}
+#directive:empty{display:none}
+#stage.denied #directive{color:var(--deny);text-shadow:0 0 22px var(--deny-soft),0 0 4px var(--deny)}
 #result{display:grid;gap:6px}
 #stage.denied #verdict{color:var(--deny);text-shadow:0 0 24px var(--deny-soft),0 0 4px var(--deny)}
 #stage.denied #status{color:var(--deny);text-shadow:0 0 14px var(--deny-soft),0 0 2px var(--deny)}
@@ -139,9 +144,10 @@ body{
 #spot::after{content:"";position:absolute;left:-40px;top:-40px;width:80px;height:80px;border-radius:50%;border:2px dashed var(--warn);box-shadow:0 0 16px rgba(255,177,59,.5);animation:pulse 1s ease-in-out infinite}
 #armhint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;pointer-events:none;font-family:var(--display);font-size:clamp(16px,2.6vw,28px);letter-spacing:.14em;text-transform:uppercase;color:var(--warn);text-align:center;padding:16px 24px;background:rgba(3,8,11,.85);border:1px solid var(--warn)}
 
-/* settings
-#gear{position:absolute;left:max(6px,env(safe-area-inset-left,0px));top:max(6px,env(safe-area-inset-top,0px));z-index:8;width:36px;height:36px;
-  border:1px solid rgba(25,255,156,.25);background:rgba(3,8,11,.6);color:var(--dim);font-size:16px;opacity:.5;cursor:pointer;border-radius:4px;touch-action:auto}
+/* settings */
+#gear{position:absolute;left:max(6px,env(safe-area-inset-left,0px));top:max(6px,env(safe-area-inset-top,0px));z-index:8;width:30px;height:30px;
+  border:1px solid rgba(25,255,156,.2);background:rgba(3,8,11,.6);color:var(--dim);font-size:14px;opacity:.35;cursor:pointer;border-radius:4px;touch-action:none;-webkit-user-select:none;user-select:none}
+#gear.holding{opacity:1;color:var(--warn);border-color:var(--warn)}
 #gear:focus-visible,.panel button:focus-visible,.panel input:focus-visible,.panel select:focus-visible,.panel textarea:focus-visible{outline:2px solid var(--line);outline-offset:2px}
 .panel{position:absolute;inset:0;z-index:9;background:rgba(3,8,11,.94);overflow:auto;touch-action:auto;-webkit-user-select:text;user-select:text;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
@@ -174,17 +180,18 @@ body{
 <body>
 <div id="stage" class="idle">
   <header class="hud">
-    <span><b>Biometric Access Terminal</b> // Node 13 // Sector 7G</span>
+    <span><b>Crash Site Perimeter Control</b> // Quarantine Zone 7 // BSL-4</span>
     <span id="clock">--:--:--</span>
   </header>
 
   <section class="band" aria-live="polite">
-    <div id="status">Place hand on scanner</div>
-    <div id="sub">Palm flat &middot; fingers spread &middot; hold still</div>
+    <div id="status">Place hand to verify clearance</div>
+    <div id="sub">Biohazards present &middot; authorized personnel only</div>
     <div class="bar"><i id="barfill"></i></div>
     <div id="result" hidden>
-      <div id="verdict">Access granted</div>
+      <div id="verdict">Clearance granted</div>
       <div id="who"></div>
+      <div id="directive"></div>
       <div id="meta"></div>
     </div>
   </section>
@@ -273,7 +280,7 @@ body{
 
   <footer class="foot">
     <span id="log">System ready</span>
-    <span id="sys">Sys OK &middot; Plate 36.6&deg;C &middot; 4,112,907 records</span>
+    <span id="sys">Containment sealed &middot; Plate 36.6&deg;C &middot; Roster 4,112 personnel</span>
   </footer>
 
   <div id="flash"></div>
@@ -307,6 +314,8 @@ body{
       <div class="row">
         <label>Secret spot (touch it with your other hand during the scan)
           <select id="s-spot">
+            <option value="left-edge">Left edge, halfway down (left thumb while holding)</option>
+            <option value="right-edge">Right edge, halfway down</option>
             <option value="top-right">Top-right corner (by the clock)</option>
             <option value="top-left">Top-left corner</option>
             <option value="bottom-right">Bottom-right corner</option>
@@ -340,7 +349,7 @@ body{
         <label class="check"><input id="s-voice" type="checkbox"> Spoken verdict (uses the device voice)</label>
       </div>
 
-      <p class="hint">Secret spot: the hand on the plate alone reads DENIED. If one finger is also resting on the secret spot (about a 2-finger-wide circle) at any point during the scan, it reads GRANTED. That finger never shows a marker on screen. Use <code>{name}</code> in a spoken line to insert the chosen name. A mouse click always triggers a scan, so you can test on a laptop; the finger count only applies to a touch screen. Settings are saved on this device.</p>
+      <p class="hint">Secret spot: the hand on the plate alone reads DENIED. If one finger is also resting on the secret spot (about a 2-finger-wide circle) at any point during the scan, or touched it within the 6 seconds before the hand landed, it reads GRANTED. That finger never shows a marker on screen. Use <code>{name}</code> in a spoken line to insert the chosen name. On a laptop a single mouse click on the hand runs a full scan (click the secret spot first, then the hand, to see GRANTED); the finger count only applies to a touch screen. Settings are saved on this device.</p>
 
       <div class="actions">
         <button type="submit">Save &amp; close</button>
@@ -356,49 +365,58 @@ body{
 (function(){
   'use strict';
   const DEFAULTS = {
+    rev:6,   // bump when names or spoken lines change so stale saved copies are replaced
     mode:'secret', minTouches:3, scanSec:3.5, sound:true, voice:true,
-    secretSpot:'top-right', secretXY:{x:0.94,y:0.06},
-    names:['Dr. Herbert West','Subject 13','V. Tepes','Elizabeth Bathory','Jack Torrance','Nurse Ratched','Dr. Frankenstein','Regan MacNeil','Norman Bates','Carrie White'],
-    grantLine:'Identity confirmed. Welcome back, {name}.',
-    denyLine:'Identity not recognized. Security has been notified.'
+    secretSpot:'left-edge', secretXY:{x:0.04,y:0.5},
+    names:['Sergeant Bushmaster'],
+    grantLine:'Clearance verified. Welcome back, {name}. Proceed to Doctor Stein immediately.',
+    denyLine:'Access denied. Civilian detected. Return to the perimeter immediately.'
   };
   const KEY = 'handscanner.settings.v1';
   let S = load();
 
   const $ = id => document.getElementById(id);
   const stage=$('stage'), statusEl=$('status'), subEl=$('sub'), bar=$('barfill'), result=$('result'),
-        verdict=$('verdict'), who=$('who'), meta=$('meta'), logEl=$('log'), beam=$('beam'),
+        verdict=$('verdict'), who=$('who'), meta=$('meta'), directive=$('directive'), logEl=$('log'), beam=$('beam'),
         touchesEl=$('touches'), plate=$('plate'), sideL=$('sideL'), sideR=$('sideR'), clock=$('clock');
 
   // ---------- settings persistence ----------
   function load(){
-    try{ const raw=localStorage.getItem(KEY); if(raw){ return Object.assign({}, DEFAULTS, JSON.parse(raw)); } }catch(e){}
+    try{
+      const raw=localStorage.getItem(KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        if(saved.rev!==DEFAULTS.rev){ delete saved.names; delete saved.grantLine; delete saved.denyLine; delete saved.secretSpot; delete saved.secretXY; saved.rev=DEFAULTS.rev; }
+        return Object.assign({}, DEFAULTS, saved);
+      }
+    }catch(e){}
     return Object.assign({}, DEFAULTS);
   }
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
   // ---------- state ----------
   let state='idle';           // idle | scanning | result
-  let scanStart=0, scanRAF=0, hintTimer=0, resetTimer=0, autoResetTimer=0, lastAlt=false;
+  let scanStart=0, scanByMouse=false, scanRAF=0, hintTimer=0, resetTimer=0, autoResetTimer=0, lastAlt=false;
   const pointers=new Map();   // pointerId -> {x,y,type}
-  let secretSeen=false, armingSpot=false, spotTimer=0;
-  const SPOTS={'top-right':{x:0.94,y:0.06},'top-left':{x:0.06,y:0.06},'bottom-right':{x:0.94,y:0.94},'bottom-left':{x:0.06,y:0.94}};
-  function spotXY(){ const f=S.secretSpot==='custom'?(S.secretXY||SPOTS['top-right']):(SPOTS[S.secretSpot]||SPOTS['top-right']); return {x:f.x*window.innerWidth,y:f.y*window.innerHeight}; }
+  let secretSeen=false, secretAt=-1, armingSpot=false, spotTimer=0;   // secretAt<0 = never touched
+  const SECRET_MEMORY_MS=6000;   // a touch on the spot counts for this long before the hand lands
+  const SPOTS={'left-edge':{x:0.04,y:0.5},'right-edge':{x:0.96,y:0.5},'top-right':{x:0.94,y:0.06},'top-left':{x:0.06,y:0.06},'bottom-right':{x:0.94,y:0.94},'bottom-left':{x:0.06,y:0.94}};
+  function spotXY(){ const f=S.secretSpot==='custom'?(S.secretXY||SPOTS['left-edge']):(SPOTS[S.secretSpot]||SPOTS['left-edge']); return {x:f.x*window.innerWidth,y:f.y*window.innerHeight}; }
   function spotRadius(){ return Math.max(60,Math.min(window.innerWidth,window.innerHeight)*0.09); }
   function inSpot(p){ const c=spotXY(), r=spotRadius(); return Math.hypot(p.x-c.x,p.y-c.y)<=r; }
   function anyInSpot(){ let hit=false; pointers.forEach(p=>{ if(inSpot(p)) hit=true; }); return hit; }
-  function noteSecret(){ if((state==='idle'||state==='scanning') && anyInSpot()) secretSeen=true; }
+  function noteSecret(){ if((state==='idle'||state==='scanning') && anyInSpot()){ secretSeen=true; secretAt=performance.now(); } }
   function showSpot(ms){
     const c=spotXY(), spot=$('spot'); spot.style.left=c.x+'px'; spot.style.top=c.y+'px'; spot.hidden=false;
     clearTimeout(spotTimer); spotTimer=setTimeout(()=>{ spot.hidden=true; },ms||5000);
   }
   const logSteps=[
     [0.04,'Contact points acquired'],
-    [0.18,'Mapping palm geometry'],
+    [0.18,'Screening for pathogen exposure'],
     [0.36,'Reading fingerprint ridges'],
-    [0.54,'Measuring subdermal vein pattern'],
-    [0.72,'Cross-referencing 4,112,907 records'],
-    [0.90,'Match confidence computed']
+    [0.54,'Measuring core temperature 36.6 °C'],
+    [0.72,'Checking containment roster'],
+    [0.90,'Verifying hazmat certification']
   ];
 
   // ---------- pointer handling ----------
@@ -438,8 +456,11 @@ body{
 
   function effectiveCount(){
     let n=0, mouse=false;
-    pointers.forEach(p=>{ n++; if(p.type==='mouse'||p.type==='pen') mouse=true; });
-    return {n, enough: n>0 && (mouse ? true : n>=S.minTouches)};
+    pointers.forEach(p=>{
+      if(S.mode==='secret' && inSpot(p)) return;            // the secret finger never counts toward starting a scan
+      n++; if(p.type==='mouse'||p.type==='pen') mouse=true;
+    });
+    return {n, enough: n>0 && (mouse ? true : n>=S.minTouches), mouse};
   }
 
   function drawTouches(){
@@ -454,16 +475,16 @@ body{
   }
 
   function evaluate(){
-    const {n,enough}=effectiveCount();
+    const {n,enough,mouse}=effectiveCount();
     if(state==='idle'){
       clearTimeout(hintTimer);
-      if(enough){ startScan(); }
+      if(enough){ scanByMouse=mouse; startScan(); }
       else if(n>0){
         hintTimer=setTimeout(()=>{ if(state==='idle' && pointers.size>0){ subEl.textContent=`${pointers.size} contact point${pointers.size>1?'s':''} · place whole hand flat`; } },700);
-      } else { subEl.textContent='Palm flat · fingers spread · hold still'; }
+      } else { subEl.textContent='Biohazards present · authorized personnel only'; }
     } else if(state==='scanning'){
       const prog=(performance.now()-scanStart)/(S.scanSec*1000);
-      if(n===0 && prog<0.88) abortScan();
+      if(n===0 && prog<0.88 && !scanByMouse) abortScan();   // a mouse click runs the whole scan (desktop testing)
     } else if(state==='result'){
       clearTimeout(resetTimer);
       if(n===0) resetTimer=setTimeout(resetIdle,2200);
@@ -472,12 +493,13 @@ body{
 
   // ---------- scan ----------
   function startScan(){
-    state='scanning'; secretSeen=false; noteSecret();
+    state='scanning'; secretSeen=secretAt>=0 && (performance.now()-secretAt)<SECRET_MEMORY_MS; noteSecret();
     stage.className='scanning';
     result.hidden=true;
     statusEl.textContent='Scanning';
     subEl.textContent='Hold still';
     bar.style.width='0%';
+    directive.textContent='';
     scanStart=performance.now();
     logSteps.forEach(s=>s.done=false);
     sfxScanStart();
@@ -494,7 +516,7 @@ body{
     beam.setAttribute('transform',dir===0?'':`translate(0 ${2*y+60}) scale(1 -1)`);
     const dots='.'.repeat(1+Math.floor((t/300)%3));
     statusEl.textContent='Scanning'+dots;
-    logSteps.forEach(s=>{ if(!s.done && p>=s[0]){ s.done=true; log(s[1]); sfxTick(); } });
+    logSteps.forEach(s=>{ if(!s.done && p>=s[0]){ s.done=true; log(s[1]); subEl.textContent=s[1]; sfxTick(); } });
     if(p>=1){ finishScan(); return; }
     scanRAF=requestAnimationFrame(tick);
   }
@@ -528,13 +550,14 @@ body{
     const conf=ok?(96+Math.random()*3.9).toFixed(1):(4+Math.random()*18).toFixed(1);
     state='result';
     stage.className=ok?'granted':'denied';
-    statusEl.textContent=ok?'Identity confirmed':'Identity unknown';
+    statusEl.textContent=ok?'Identity confirmed':'Not on containment roster';
     subEl.textContent='';
-    verdict.textContent=ok?'Access granted':'Access denied';
-    who.textContent=ok?`Welcome, ${name}`:'No match on file';
-    meta.textContent=ok?`${id} · match ${conf}% · clearance level 5`:`${id} · match ${conf}% · security notified`;
+    verdict.textContent=ok?'Clearance granted':'Access denied';
+    who.textContent=ok?`${name} · Hazmat Response Unit · Level 4`:'Unauthorized civilian';
+    directive.textContent=ok?'Proceed to Dr. Stein immediately!':'Return to the perimeter';
+    meta.textContent=ok?`Autopsy lab B · ${id} · match ${conf}%`:`Containment breach risk · security notified · ${id} · match ${conf}%`;
     result.hidden=false;
-    log(ok?`Match: ${name} (${conf}%)`:`No match (${conf}%) · alert raised`);
+    log(ok?`Cleared: ${name} (${conf}%)`:`Unauthorized civilian (${conf}%) · security notified`);
     if(ok) sfxGranted(); else sfxDenied();
     speak((ok?S.grantLine:S.denyLine).replace(/\{name\}/gi,name));
     clearTimeout(autoResetTimer);
@@ -543,12 +566,12 @@ body{
   }
   function resetIdle(){
     clearTimeout(resetTimer); clearTimeout(autoResetTimer); cancelAnimationFrame(scanRAF);
-    state='idle'; secretSeen=false;
+    state='idle'; secretSeen=false; secretAt=-1;
     stage.className='idle';
-    statusEl.textContent='Place hand on scanner';
-    subEl.textContent='Palm flat · fingers spread · hold still';
+    statusEl.textContent='Place hand to verify clearance';
+    subEl.textContent='Biohazards present · authorized personnel only';
     bar.style.width='0%';
-    result.hidden=true;
+    result.hidden=true; directive.textContent='';
     beam.setAttribute('y',-60);
     log('System ready');
     if(pointers.size) evaluate();
@@ -638,10 +661,18 @@ body{
   const panel=$('settings'), form=$('form');
   const f={mode:$('s-mode'),spot:$('s-spot'),min:$('s-min'),dur:$('s-dur'),names:$('s-names'),grant:$('s-grant'),deny:$('s-deny'),sound:$('s-sound'),voice:$('s-voice')};
   function fill(){
-    f.mode.value=S.mode; f.spot.value=S.secretSpot||'top-right'; f.min.value=S.minTouches; f.dur.value=S.scanSec; f.names.value=S.names.join('\n');
+    f.mode.value=S.mode; f.spot.value=S.secretSpot||'left-edge'; f.min.value=S.minTouches; f.dur.value=S.scanSec; f.names.value=S.names.join('\n');
     f.grant.value=S.grantLine; f.deny.value=S.denyLine; f.sound.checked=!!S.sound; f.voice.checked=!!S.voice;
   }
-  $('gear').addEventListener('click',()=>{ fill(); panel.hidden=false; });
+  // Settings open only after a 1.5 s press-and-hold on the gear, so a thumb brushing it does nothing.
+  (function(){
+    const gear=$('gear'); let t=0;
+    const cancel=()=>{ clearTimeout(t); t=0; gear.classList.remove('holding'); };
+    gear.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); gear.classList.add('holding');
+      t=setTimeout(()=>{ cancel(); fill(); panel.hidden=false; },1500); });
+    ['pointerup','pointercancel','pointerleave'].forEach(ev=>gear.addEventListener(ev,cancel));
+    gear.addEventListener('click',e=>e.preventDefault());
+  })();
   form.addEventListener('submit',e=>{
     e.preventDefault();
     S.mode=f.mode.value;
@@ -655,7 +686,7 @@ body{
   });
   $('s-reset').addEventListener('click',()=>{ S=Object.assign({},DEFAULTS); save(); fill(); });
   $('s-setspot').addEventListener('click',()=>{ panel.hidden=true; armingSpot=true; $('armhint').hidden=false; });
-  $('s-showspot').addEventListener('click',()=>{ S.secretSpot=f.spot.value; if(S.secretSpot==='custom'&&!S.secretXY) S.secretXY=SPOTS['top-right']; save(); panel.hidden=true; showSpot(5000); });
+  $('s-showspot').addEventListener('click',()=>{ S.secretSpot=f.spot.value; if(S.secretSpot==='custom'&&!S.secretXY) S.secretXY=SPOTS['left-edge']; save(); panel.hidden=true; showSpot(5000); });
   $('s-test').addEventListener('click',()=>{ panel.hidden=true; ensureAudio(); resetIdle(); startScan(); });
   $('s-full').addEventListener('click',()=>{
     const el=document.documentElement;
@@ -673,7 +704,7 @@ body{
   if(!('serviceWorker' in navigator)){ mark('Offline cache unavailable'); return; }
   navigator.serviceWorker.register('sw.js').then(function(reg){
     function check(){
-      caches.has('handscanner-v2').then(function(ok){ mark(ok?'Offline ready':'Caching…'); });
+      caches.has('handscanner-v7').then(function(ok){ mark(ok?'Offline ready':'Caching…'); });
     }
     check();
     if(reg.installing){ reg.installing.addEventListener('statechange',check); }
