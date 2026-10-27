@@ -1,0 +1,14 @@
+{
+  "name": "Biometric Hand Scanner",
+  "short_name": "Hand Scanner",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#03080b",
+  "theme_color": "#03080b",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

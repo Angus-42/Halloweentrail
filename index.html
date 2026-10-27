@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hand Scanner">
+<meta name="theme-color" content="#03080b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box;background:#03080b}[hidden]{display:none!important}</style>
+<title>Biometric Hand Scanner</title>
+<style>
+@font-face{font-family:'Orbitron';font-style:normal;font-weight:400 900;font-display:swap;src:url(fonts/orbitron.woff2) format('woff2')}
+@font-face{font-family:'Share Tech Mono';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/sharetechmono.woff2) format('woff2')}
+</style>
+<style>
+/* Layout: one full-screen terminal. Rows = header strip, status band (kept at the TOP so the operator's own arm never covers it),
+   the life-size hand plate, a one-line footer. In wide/landscape views two data columns flank the hand plate. Single dark theme by design. */
+:root{
+  --bg:#03080b;
+  --plate:#071219;
+  --line:#19ff9c;          /* phosphor green: idle + granted */
+  --line-soft:rgba(25,255,156,.22);
+  --fg:#bfead7;
+  --dim:#3e7c67;
+  --warn:#ffb13b;
+  --deny:#ff2d44;
+  --deny-soft:rgba(255,45,68,.22);
+  --display:'Orbitron',system-ui,sans-serif;
+  --mono:'Share Tech Mono',ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px;
+  overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  overscroll-behavior:none;cursor:crosshair;
+}
+*{box-sizing:border-box}
+#stage{
+  position:relative;height:100%;display:grid;gap:6px;
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"hud" "band" "plate" "foot";
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:8px;
+  background:
+    radial-gradient(ellipse at 50% 60%, rgba(25,255,156,.07), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(25,255,156,.045) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(25,255,156,.045) 0 1px, transparent 1px 48px),
+    var(--bg);
+}
+#stage::after{ /* CRT scanlines */
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:5;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 2px, transparent 2px 4px);
+  mix-blend-mode:multiply;
+}
+@media (min-aspect-ratio:1/1) and (min-width:860px){
+  #stage{
+    grid-template-columns:minmax(150px,1fr) auto minmax(150px,1fr);
+    grid-template-areas:"hud hud hud" "band band band" "left plate right" "foot foot foot";
+  }
+  .side{display:flex}
+}
+
+/* header + footer strips */
+.hud{grid-area:hud;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid rgba(25,255,156,.18);padding-bottom:6px}
+.hud b{color:var(--line);font-weight:400}
+.foot{grid-area:foot;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);border-top:1px solid rgba(25,255,156,.18);padding-top:6px;
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:1.6em}
+#log{color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+
+/* status band */
+.band{grid-area:band;text-align:center;display:grid;gap:8px;padding-block:4px}
+#status{font-family:var(--display);font-weight:700;font-size:clamp(18px,3.2vw,34px);letter-spacing:.22em;text-transform:uppercase;
+  color:var(--line);text-shadow:0 0 14px var(--line-soft),0 0 2px var(--line);text-wrap:balance;min-height:1.3em}
+#stage.idle #status{animation:pulse 2.2s ease-in-out infinite}
+#sub{font-size:clamp(11px,1.5vw,15px);letter-spacing:.2em;text-transform:uppercase;color:var(--dim);min-height:1.4em}
+.bar{height:6px;width:min(560px,80%);margin:0 auto;background:rgba(25,255,156,.1);border:1px solid rgba(25,255,156,.3);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0;width:0;background:var(--line);box-shadow:0 0 12px var(--line)}
+#verdict{font-family:var(--display);font-weight:900;font-size:clamp(26px,5.4vw,64px);letter-spacing:.14em;text-transform:uppercase;line-height:1.05;
+  color:var(--line);text-shadow:0 0 24px var(--line-soft),0 0 4px var(--line)}
+#who{font-family:var(--display);font-weight:500;font-size:clamp(14px,2.4vw,26px);letter-spacing:.18em;text-transform:uppercase;color:var(--fg)}
+#meta{font-size:clamp(11px,1.4vw,14px);letter-spacing:.14em;color:var(--dim)}
+#result{display:grid;gap:6px}
+#stage.denied #verdict{color:var(--deny);text-shadow:0 0 24px var(--deny-soft),0 0 4px var(--deny)}
+#stage.denied #status{color:var(--deny);text-shadow:0 0 14px var(--deny-soft),0 0 2px var(--deny)}
+#stage.denied .bar i{background:var(--deny);box-shadow:0 0 12px var(--deny)}
+#stage.warn #status{color:var(--warn);text-shadow:0 0 14px rgba(255,177,59,.3)}
+
+/* hand plate */
+.plate{grid-area:plate;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0}
+.plate svg{height:100%;max-width:100%;width:auto;display:block;overflow:visible}
+.hand-fill{fill:var(--line);opacity:.05;transition:opacity .4s}
+#stage.scanning .hand-fill{opacity:.1}
+#stage.granted .hand-fill{opacity:.28;animation:breathe 1.4s ease-in-out infinite}
+#stage.denied .hand-fill{fill:var(--deny);opacity:.3;animation:strobe .25s steps(2) 6}
+.hand-outline{fill:#fff;filter:url(#ring-ok)}
+#stage.idle .hand-outline{opacity:.75}
+#stage.denied .hand-outline{filter:url(#ring-deny)}
+#stage.warn .hand-outline{filter:url(#ring-warn)}
+.beam{opacity:0}
+#stage.scanning .beam{opacity:1}
+.ridges{stroke:var(--line);fill:none;stroke-width:1.6;opacity:0;stroke-dasharray:6 4}
+#stage.scanning .ridges,#stage.granted .ridges{opacity:.9;animation:ridge 1.2s linear infinite}
+#stage.denied .ridges{stroke:var(--deny);opacity:.9}
+.calibration{stroke:var(--dim);stroke-width:1;fill:none;opacity:.5}
+.calibration text{fill:var(--dim);font:11px var(--mono);stroke:none;letter-spacing:.1em}
+
+/* touch markers (follow the operator's actual fingers) */
+#touches{position:absolute;inset:0;pointer-events:none}
+.tp{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border:1.5px solid var(--line);border-radius:50%;
+  box-shadow:0 0 12px var(--line-soft), inset 0 0 10px var(--line-soft);opacity:.9}
+.tp::before,.tp::after{content:"";position:absolute;background:var(--line);opacity:.7}
+.tp::before{left:50%;top:-8px;bottom:-8px;width:1px;margin-left:-.5px}
+.tp::after{top:50%;left:-8px;right:-8px;height:1px;margin-top:-.5px}
+#stage.denied .tp{border-color:var(--deny)}
+
+/* side data streams */
+.side{display:none;flex-direction:column;justify-content:center;gap:2px;font-size:11px;letter-spacing:.08em;color:var(--dim);overflow:hidden;min-width:0;padding:0 8px}
+.side.right{text-align:right}
+.side span{white-space:nowrap;overflow:hidden;text-overflow:clip}
+.side span.hot{color:var(--line)}
+#stage.denied .side span.hot{color:var(--deny)}
+
+/* verdict flash across the whole screen, visible around the operator's hand */
+#flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:var(--line);z-index:4}
+#stage.granted #flash{animation:flash .9s ease-out 1}
+#stage.denied #flash{background:var(--deny);animation:flash .35s ease-out 3}
+
+/* secret spot reveal (only while configuring) */
+#spot{position:absolute;width:0;height:0;pointer-events:none;z-index:7}
+#spot::after{content:"";position:absolute;left:-40px;top:-40px;width:80px;height:80px;border-radius:50%;border:2px dashed var(--warn);box-shadow:0 0 16px rgba(255,177,59,.5);animation:pulse 1s ease-in-out infinite}
+#armhint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;pointer-events:none;font-family:var(--display);font-size:clamp(16px,2.6vw,28px);letter-spacing:.14em;text-transform:uppercase;color:var(--warn);text-align:center;padding:16px 24px;background:rgba(3,8,11,.85);border:1px solid var(--warn)}
+
+/* settings
+#gear{position:absolute;left:max(6px,env(safe-area-inset-left,0px));top:max(6px,env(safe-area-inset-top,0px));z-index:8;width:36px;height:36px;
+  border:1px solid rgba(25,255,156,.25);background:rgba(3,8,11,.6);color:var(--dim);font-size:16px;opacity:.5;cursor:pointer;border-radius:4px;touch-action:auto}
+#gear:focus-visible,.panel button:focus-visible,.panel input:focus-visible,.panel select:focus-visible,.panel textarea:focus-visible{outline:2px solid var(--line);outline-offset:2px}
+.panel{position:absolute;inset:0;z-index:9;background:rgba(3,8,11,.94);overflow:auto;touch-action:auto;-webkit-user-select:text;user-select:text;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+.panel form{max-width:640px;margin:0 auto;display:grid;gap:14px}
+.panel h2{font-family:var(--display);font-weight:700;letter-spacing:.2em;text-transform:uppercase;font-size:18px;margin:0;color:var(--line)}
+.panel label{display:grid;gap:5px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.panel input,.panel select,.panel textarea{font:14px var(--mono);color:var(--fg);background:var(--plate);border:1px solid rgba(25,255,156,.3);padding:8px 10px;border-radius:3px;width:100%}
+.panel textarea{min-height:120px;resize:vertical}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.panel .check{display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:.04em;font-size:14px;color:var(--fg)}
+.panel .check input{width:20px;height:20px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.panel button{font:13px var(--display);letter-spacing:.14em;text-transform:uppercase;padding:10px 16px;border-radius:3px;cursor:pointer;
+  background:var(--line);color:#03080b;border:1px solid var(--line)}
+.panel button.ghost{background:transparent;color:var(--line)}
+.hint{font-size:12px;line-height:1.5;color:var(--dim);letter-spacing:.02em}
+.hint code{color:var(--fg)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes breathe{0%,100%{opacity:.22}50%{opacity:.34}}
+@keyframes strobe{0%{opacity:.08}100%{opacity:.4}}
+@keyframes flash{0%{opacity:.55}100%{opacity:0}}
+@keyframes ridge{to{stroke-dashoffset:-20}}
+@media (prefers-reduced-motion:reduce){
+  #stage.idle #status,#stage.granted .hand-fill,.ridges,#flash{animation:none!important}
+}
+</style>
+
+</head>
+<body>
+<div id="stage" class="idle">
+  <header class="hud">
+    <span><b>Biometric Access Terminal</b> // Node 13 // Sector 7G</span>
+    <span id="clock">--:--:--</span>
+  </header>
+
+  <section class="band" aria-live="polite">
+    <div id="status">Place hand on scanner</div>
+    <div id="sub">Palm flat &middot; fingers spread &middot; hold still</div>
+    <div class="bar"><i id="barfill"></i></div>
+    <div id="result" hidden>
+      <div id="verdict">Access granted</div>
+      <div id="who"></div>
+      <div id="meta"></div>
+    </div>
+  </section>
+
+  <aside class="side left" id="sideL" aria-hidden="true"></aside>
+
+  <div class="plate" id="plate">
+    <svg viewBox="0 0 480 640" aria-label="Hand outline" role="img">
+      <defs>
+        <g id="handshape">
+          <rect x="178" y="268" width="240" height="252" rx="72"/>
+          <rect x="222" y="470" width="156" height="200" rx="46"/>
+          <rect x="182" y="90" width="56" height="210" rx="28" transform="rotate(-6 210 290)"/>
+          <rect x="246" y="55" width="58" height="235" rx="29"/>
+          <rect x="311" y="83" width="54" height="215" rx="27" transform="rotate(6 338 288)"/>
+          <rect x="368" y="163" width="48" height="165" rx="24" transform="rotate(14 392 318)"/>
+          <rect x="159" y="250" width="62" height="160" rx="31" transform="rotate(-50 190 400)"/>
+          <ellipse cx="205" cy="385" rx="44" ry="60" transform="rotate(-35 205 385)"/>
+        </g>
+        <clipPath id="handclip">
+          <rect x="178" y="268" width="240" height="252" rx="72"/>
+          <rect x="222" y="470" width="156" height="200" rx="46"/>
+          <rect x="182" y="90" width="56" height="210" rx="28" transform="rotate(-6 210 290)"/>
+          <rect x="246" y="55" width="58" height="235" rx="29"/>
+          <rect x="311" y="83" width="54" height="215" rx="27" transform="rotate(6 338 288)"/>
+          <rect x="368" y="163" width="48" height="165" rx="24" transform="rotate(14 392 318)"/>
+          <rect x="159" y="250" width="62" height="160" rx="31" transform="rotate(-50 190 400)"/>
+          <ellipse cx="205" cy="385" rx="44" ry="60" transform="rotate(-35 205 385)"/>
+        </clipPath>
+        <filter id="ring-ok" x="-10%" y="-10%" width="120%" height="120%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="d"/>
+          <feComposite in="d" in2="SourceAlpha" operator="out" result="ring"/>
+          <feFlood flood-color="#19ff9c" result="c"/>
+          <feComposite in="c" in2="ring" operator="in" result="cr"/>
+          <feGaussianBlur in="cr" stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="cr"/></feMerge>
+        </filter>
+        <filter id="ring-deny" x="-10%" y="-10%" width="120%" height="120%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="d"/>
+          <feComposite in="d" in2="SourceAlpha" operator="out" result="ring"/>
+          <feFlood flood-color="#ff2d44" result="c"/>
+          <feComposite in="c" in2="ring" operator="in" result="cr"/>
+          <feGaussianBlur in="cr" stdDeviation="6" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="cr"/></feMerge>
+        </filter>
+        <filter id="ring-warn" x="-10%" y="-10%" width="120%" height="120%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="d"/>
+          <feComposite in="d" in2="SourceAlpha" operator="out" result="ring"/>
+          <feFlood flood-color="#ffb13b" result="c"/>
+          <feComposite in="c" in2="ring" operator="in" result="cr"/>
+          <feGaussianBlur in="cr" stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="cr"/></feMerge>
+        </filter>
+        <linearGradient id="beamgrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#19ff9c" stop-opacity="0"/>
+          <stop offset=".85" stop-color="#19ff9c" stop-opacity=".35"/>
+          <stop offset="1" stop-color="#19ff9c" stop-opacity="1"/>
+        </linearGradient>
+      </defs>
+
+      <g class="calibration">
+        <path d="M30 40 h40 M30 40 v40 M450 40 h-40 M450 40 v40 M30 600 h40 M30 600 v-40 M450 600 h-40 M450 600 v-40"/>
+        <text x="30" y="30">CAL 1:1</text>
+        <text x="410" y="30" text-anchor="end">PLATE A</text>
+      </g>
+
+      <use href="#handshape" class="hand-outline"/>
+      <use href="#handshape" class="hand-fill"/>
+
+      <g clip-path="url(#handclip)">
+        <rect class="beam" id="beam" x="0" y="-60" width="480" height="60" fill="url(#beamgrad)"/>
+        <g class="ridges">
+          <circle cx="189" cy="122" r="7"/><circle cx="189" cy="122" r="14"/><circle cx="189" cy="122" r="21"/>
+          <circle cx="275" cy="88" r="7"/><circle cx="275" cy="88" r="14"/><circle cx="275" cy="88" r="21"/>
+          <circle cx="358" cy="116" r="7"/><circle cx="358" cy="116" r="14"/><circle cx="358" cy="116" r="21"/>
+          <circle cx="424" cy="196" r="6"/><circle cx="424" cy="196" r="12"/><circle cx="424" cy="196" r="18"/>
+          <circle cx="92" cy="318" r="7"/><circle cx="92" cy="318" r="14"/><circle cx="92" cy="318" r="21"/>
+          <ellipse cx="298" cy="400" rx="30" ry="48"/><ellipse cx="298" cy="400" rx="48" ry="72"/>
+        </g>
+      </g>
+    </svg>
+    <div id="touches"></div>
+  </div>
+
+  <aside class="side right" id="sideR" aria-hidden="true"></aside>
+
+  <footer class="foot">
+    <span id="log">System ready</span>
+    <span id="sys">Sys OK &middot; Plate 36.6&deg;C &middot; 4,112,907 records</span>
+  </footer>
+
+  <div id="flash"></div>
+  <div id="spot" hidden></div>
+  <div id="armhint" hidden>Tap the screen where the secret spot should be</div>
+
+  <button id="gear" type="button" aria-label="Scanner settings" title="Settings">&#9881;</button>
+
+  <div class="panel" id="settings" hidden>
+    <form id="form">
+      <h2>Scanner settings</h2>
+
+      <div class="row">
+        <label>Outcome
+          <select id="s-mode">
+            <option value="secret">Denied, unless the secret spot is also touched</option>
+            <option value="granted">Always granted</option>
+            <option value="denied">Always denied</option>
+            <option value="random">Random (50 / 50)</option>
+            <option value="alternate">Alternate granted / denied</option>
+          </select>
+        </label>
+        <label>Fingers needed to trigger (1&ndash;6)
+          <input id="s-min" type="number" min="1" max="6" step="1">
+        </label>
+        <label>Scan time (seconds)
+          <input id="s-dur" type="number" min="1" max="15" step="0.5">
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Secret spot (touch it with your other hand during the scan)
+          <select id="s-spot">
+            <option value="top-right">Top-right corner (by the clock)</option>
+            <option value="top-left">Top-left corner</option>
+            <option value="bottom-right">Bottom-right corner</option>
+            <option value="bottom-left">Bottom-left corner</option>
+            <option value="custom">Custom (set by tapping)</option>
+          </select>
+        </label>
+        <label>&nbsp;
+          <span class="actions" style="margin:0">
+            <button type="button" class="ghost" id="s-setspot">Set by tapping</button>
+            <button type="button" class="ghost" id="s-showspot">Reveal spot 5 s</button>
+          </span>
+        </label>
+      </div>
+
+      <label>Names to "identify" (one per line, picked at random)
+        <textarea id="s-names" spellcheck="false"></textarea>
+      </label>
+
+      <div class="row">
+        <label>Spoken line when granted
+          <input id="s-grant" type="text">
+        </label>
+        <label>Spoken line when denied
+          <input id="s-deny" type="text">
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="check"><input id="s-sound" type="checkbox"> Sound effects</label>
+        <label class="check"><input id="s-voice" type="checkbox"> Spoken verdict (uses the device voice)</label>
+      </div>
+
+      <p class="hint">Secret spot: the hand on the plate alone reads DENIED. If one finger is also resting on the secret spot (about a 2-finger-wide circle) at any point during the scan, it reads GRANTED. That finger never shows a marker on screen. Use <code>{name}</code> in a spoken line to insert the chosen name. A mouse click always triggers a scan, so you can test on a laptop; the finger count only applies to a touch screen. Settings are saved on this device.</p>
+
+      <div class="actions">
+        <button type="submit">Save &amp; close</button>
+        <button type="button" class="ghost" id="s-test">Test scan</button>
+        <button type="button" class="ghost" id="s-full">Full screen</button>
+        <button type="button" class="ghost" id="s-reset">Restore defaults</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const DEFAULTS = {
+    mode:'secret', minTouches:3, scanSec:3.5, sound:true, voice:true,
+    secretSpot:'top-right', secretXY:{x:0.94,y:0.06},
+    names:['Dr. Herbert West','Subject 13','V. Tepes','Elizabeth Bathory','Jack Torrance','Nurse Ratched','Dr. Frankenstein','Regan MacNeil','Norman Bates','Carrie White'],
+    grantLine:'Identity confirmed. Welcome back, {name}.',
+    denyLine:'Identity not recognized. Security has been notified.'
+  };
+  const KEY = 'handscanner.settings.v1';
+  let S = load();
+
+  const $ = id => document.getElementById(id);
+  const stage=$('stage'), statusEl=$('status'), subEl=$('sub'), bar=$('barfill'), result=$('result'),
+        verdict=$('verdict'), who=$('who'), meta=$('meta'), logEl=$('log'), beam=$('beam'),
+        touchesEl=$('touches'), plate=$('plate'), sideL=$('sideL'), sideR=$('sideR'), clock=$('clock');
+
+  // ---------- settings persistence ----------
+  function load(){
+    try{ const raw=localStorage.getItem(KEY); if(raw){ return Object.assign({}, DEFAULTS, JSON.parse(raw)); } }catch(e){}
+    return Object.assign({}, DEFAULTS);
+  }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+  // ---------- state ----------
+  let state='idle';           // idle | scanning | result
+  let scanStart=0, scanRAF=0, hintTimer=0, resetTimer=0, autoResetTimer=0, lastAlt=false;
+  const pointers=new Map();   // pointerId -> {x,y,type}
+  let secretSeen=false, armingSpot=false, spotTimer=0;
+  const SPOTS={'top-right':{x:0.94,y:0.06},'top-left':{x:0.06,y:0.06},'bottom-right':{x:0.94,y:0.94},'bottom-left':{x:0.06,y:0.94}};
+  function spotXY(){ const f=S.secretSpot==='custom'?(S.secretXY||SPOTS['top-right']):(SPOTS[S.secretSpot]||SPOTS['top-right']); return {x:f.x*window.innerWidth,y:f.y*window.innerHeight}; }
+  function spotRadius(){ return Math.max(60,Math.min(window.innerWidth,window.innerHeight)*0.09); }
+  function inSpot(p){ const c=spotXY(), r=spotRadius(); return Math.hypot(p.x-c.x,p.y-c.y)<=r; }
+  function anyInSpot(){ let hit=false; pointers.forEach(p=>{ if(inSpot(p)) hit=true; }); return hit; }
+  function noteSecret(){ if((state==='idle'||state==='scanning') && anyInSpot()) secretSeen=true; }
+  function showSpot(ms){
+    const c=spotXY(), spot=$('spot'); spot.style.left=c.x+'px'; spot.style.top=c.y+'px'; spot.hidden=false;
+    clearTimeout(spotTimer); spotTimer=setTimeout(()=>{ spot.hidden=true; },ms||5000);
+  }
+  const logSteps=[
+    [0.04,'Contact points acquired'],
+    [0.18,'Mapping palm geometry'],
+    [0.36,'Reading fingerprint ridges'],
+    [0.54,'Measuring subdermal vein pattern'],
+    [0.72,'Cross-referencing 4,112,907 records'],
+    [0.90,'Match confidence computed']
+  ];
+
+  // ---------- pointer handling ----------
+  function pointerDown(e){
+    if(e.target.closest('#gear,#settings')) return;
+    e.preventDefault();
+    if(armingSpot){
+      armingSpot=false; $('armhint').hidden=true;
+      S.secretSpot='custom'; S.secretXY={x:e.clientX/window.innerWidth,y:e.clientY/window.innerHeight}; save();
+      showSpot(3000); return;
+    }
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    ensureAudio(); requestWake();
+    noteSecret(); drawTouches(); evaluate();
+  }
+  function pointerMove(e){
+    if(!pointers.has(e.pointerId)) return;
+    e.preventDefault();
+    const p=pointers.get(e.pointerId); p.x=e.clientX; p.y=e.clientY;
+    noteSecret(); drawTouches();
+  }
+  function pointerUp(e){
+    if(!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    drawTouches(); evaluate();
+  }
+  stage.addEventListener('pointerdown',pointerDown);
+  stage.addEventListener('pointermove',pointerMove,{passive:false});
+  stage.addEventListener('pointerup',pointerUp);
+  stage.addEventListener('pointercancel',pointerUp);
+  stage.addEventListener('lostpointercapture',pointerUp);
+  // stop Safari's own pan / pinch / long-press behaviours
+  ['touchstart','touchmove','touchend'].forEach(t=>document.addEventListener(t,e=>{ if(!e.target.closest('#settings')) e.preventDefault(); },{passive:false}));
+  ['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t,e=>e.preventDefault()));
+  document.addEventListener('contextmenu',e=>{ if(!e.target.closest('#settings')) e.preventDefault(); });
+  document.addEventListener('dblclick',e=>e.preventDefault());
+
+  function effectiveCount(){
+    let n=0, mouse=false;
+    pointers.forEach(p=>{ n++; if(p.type==='mouse'||p.type==='pen') mouse=true; });
+    return {n, enough: n>0 && (mouse ? true : n>=S.minTouches)};
+  }
+
+  function drawTouches(){
+    const r=plate.getBoundingClientRect();
+    let html='';
+    pointers.forEach(p=>{
+      if(p.x<r.left||p.x>r.right||p.y<r.top||p.y>r.bottom) return;   // off the plate: no marker
+      if(S.mode==='secret' && inSpot(p)) return;                      // the secret finger stays invisible
+      html+=`<div class="tp" style="left:${p.x-r.left}px;top:${p.y-r.top}px"></div>`;
+    });
+    touchesEl.innerHTML=html;
+  }
+
+  function evaluate(){
+    const {n,enough}=effectiveCount();
+    if(state==='idle'){
+      clearTimeout(hintTimer);
+      if(enough){ startScan(); }
+      else if(n>0){
+        hintTimer=setTimeout(()=>{ if(state==='idle' && pointers.size>0){ subEl.textContent=`${pointers.size} contact point${pointers.size>1?'s':''} · place whole hand flat`; } },700);
+      } else { subEl.textContent='Palm flat · fingers spread · hold still'; }
+    } else if(state==='scanning'){
+      const prog=(performance.now()-scanStart)/(S.scanSec*1000);
+      if(n===0 && prog<0.88) abortScan();
+    } else if(state==='result'){
+      clearTimeout(resetTimer);
+      if(n===0) resetTimer=setTimeout(resetIdle,2200);
+    }
+  }
+
+  // ---------- scan ----------
+  function startScan(){
+    state='scanning'; secretSeen=false; noteSecret();
+    stage.className='scanning';
+    result.hidden=true;
+    statusEl.textContent='Scanning';
+    subEl.textContent='Hold still';
+    bar.style.width='0%';
+    scanStart=performance.now();
+    logSteps.forEach(s=>s.done=false);
+    sfxScanStart();
+    scanRAF=requestAnimationFrame(tick);
+  }
+  function tick(now){
+    if(state!=='scanning') return;
+    const total=S.scanSec*1000, t=now-scanStart, p=Math.min(1,t/total);
+    bar.style.width=(p*100).toFixed(1)+'%';
+    // beam: two full sweeps (down, up) across the plate for the scan duration
+    const sweeps=2, ph=(p*sweeps)%1, dir=Math.floor(p*sweeps)%2;
+    const y=(dir===0?ph:1-ph)*700-60;
+    beam.setAttribute('y',y);
+    beam.setAttribute('transform',dir===0?'':`translate(0 ${2*y+60}) scale(1 -1)`);
+    const dots='.'.repeat(1+Math.floor((t/300)%3));
+    statusEl.textContent='Scanning'+dots;
+    logSteps.forEach(s=>{ if(!s.done && p>=s[0]){ s.done=true; log(s[1]); sfxTick(); } });
+    if(p>=1){ finishScan(); return; }
+    scanRAF=requestAnimationFrame(tick);
+  }
+  function abortScan(){
+    cancelAnimationFrame(scanRAF);
+    state='result';
+    stage.className='warn';
+    statusEl.textContent='Scan interrupted';
+    subEl.textContent='Keep hand on plate until the bar completes';
+    log('Contact lost before capture complete');
+    sfxWarn();
+    clearTimeout(autoResetTimer);
+    autoResetTimer=setTimeout(resetIdle,1800);
+  }
+  function finishScan(){
+    cancelAnimationFrame(scanRAF);
+    bar.style.width='100%';
+    beam.setAttribute('y',-60);
+    let ok;
+    noteSecret();
+    switch(S.mode){
+      case 'secret': ok=secretSeen; break;
+      case 'denied': ok=false; break;
+      case 'random': ok=Math.random()<0.5; break;
+      case 'alternate': lastAlt=!lastAlt; ok=lastAlt; break;
+      default: ok=true;
+    }
+    const names=S.names.filter(Boolean);
+    const name=names.length?names[Math.floor(Math.random()*names.length)]:'Subject 13';
+    const id='ID-'+Math.floor(1000+Math.random()*9000)+'-'+hex(2).toUpperCase();
+    const conf=ok?(96+Math.random()*3.9).toFixed(1):(4+Math.random()*18).toFixed(1);
+    state='result';
+    stage.className=ok?'granted':'denied';
+    statusEl.textContent=ok?'Identity confirmed':'Identity unknown';
+    subEl.textContent='';
+    verdict.textContent=ok?'Access granted':'Access denied';
+    who.textContent=ok?`Welcome, ${name}`:'No match on file';
+    meta.textContent=ok?`${id} · match ${conf}% · clearance level 5`:`${id} · match ${conf}% · security notified`;
+    result.hidden=false;
+    log(ok?`Match: ${name} (${conf}%)`:`No match (${conf}%) · alert raised`);
+    if(ok) sfxGranted(); else sfxDenied();
+    speak((ok?S.grantLine:S.denyLine).replace(/\{name\}/gi,name));
+    clearTimeout(autoResetTimer);
+    autoResetTimer=setTimeout(resetIdle,12000);
+    evaluate();
+  }
+  function resetIdle(){
+    clearTimeout(resetTimer); clearTimeout(autoResetTimer); cancelAnimationFrame(scanRAF);
+    state='idle'; secretSeen=false;
+    stage.className='idle';
+    statusEl.textContent='Place hand on scanner';
+    subEl.textContent='Palm flat · fingers spread · hold still';
+    bar.style.width='0%';
+    result.hidden=true;
+    beam.setAttribute('y',-60);
+    log('System ready');
+    if(pointers.size) evaluate();
+  }
+  function log(msg){ logEl.textContent=`${stamp()}  ${msg}`; }
+
+  // ---------- ambience: clock + hex streams ----------
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function stamp(){ const d=new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+  function hex(bytes){ let s=''; for(let i=0;i<bytes;i++) s+=pad(Math.floor(Math.random()*256).toString(16)); return s; }
+  setInterval(()=>{ clock.textContent=stamp(); },500); clock.textContent=stamp();
+  const LINES=16;
+  function streamLine(hot){
+    const a='0x'+hex(2).toUpperCase(), b=hex(1)+' '+hex(1)+' '+hex(1)+' '+hex(1);
+    return `<span class="${hot?'hot':''}">${a}  ${b.toUpperCase()}</span>`;
+  }
+  function renderStreams(){
+    const busy=state==='scanning';
+    let l='',r='';
+    for(let i=0;i<LINES;i++){ l+=streamLine(busy&&Math.random()<.3); r+=streamLine(busy&&Math.random()<.3); }
+    sideL.innerHTML=l; sideR.innerHTML=r;
+    setTimeout(renderStreams, busy?70:450);
+  }
+  renderStreams();
+
+  // ---------- audio ----------
+  let ctx=null;
+  function ensureAudio(){
+    if(!S.sound) return;
+    try{
+      if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
+      if(ctx.state==='suspended') ctx.resume();
+    }catch(e){ ctx=null; }
+  }
+  function tone(freq,dur,type,gain,when,slideTo){
+    if(!ctx||!S.sound) return;
+    const o=ctx.createOscillator(), g=ctx.createGain(), t=ctx.currentTime+(when||0);
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(gain||0.08,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+dur+0.02);
+  }
+  let hum=null;
+  function sfxScanStart(){
+    if(!ctx||!S.sound) return;
+    stopHum();
+    const o=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
+    o.type='sawtooth'; o.frequency.setValueAtTime(70,ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(160,ctx.currentTime+S.scanSec);
+    f.type='lowpass'; f.frequency.value=600;
+    g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.05,ctx.currentTime+0.2);
+    o.connect(f).connect(g).connect(ctx.destination); o.start();
+    hum={o,g};
+  }
+  function stopHum(){
+    if(!hum) return;
+    try{ hum.g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.15); hum.o.stop(ctx.currentTime+0.2); }catch(e){}
+    hum=null;
+  }
+  function sfxTick(){ tone(1400,0.05,'square',0.03); }
+  function sfxGranted(){ stopHum(); tone(880,0.12,'sine',0.1,0); tone(1175,0.12,'sine',0.1,0.13); tone(1760,0.5,'sine',0.1,0.26); }
+  function sfxDenied(){ stopHum(); for(let i=0;i<3;i++) tone(110,0.18,'sawtooth',0.12,i*0.26,90); }
+  function sfxWarn(){ stopHum(); tone(520,0.25,'square',0.05,0,380); }
+
+  function speak(text){
+    if(!S.voice||!('speechSynthesis' in window)||!text) return;
+    try{
+      speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(text);
+      u.rate=0.88; u.pitch=0.55; u.volume=1;
+      const voices=speechSynthesis.getVoices();
+      const pick=voices.find(v=>/en/i.test(v.lang)&&/Daniel|Fred|Rishi|Google UK English Male|Microsoft David/i.test(v.name))||voices.find(v=>/^en/i.test(v.lang));
+      if(pick) u.voice=pick;
+      setTimeout(()=>speechSynthesis.speak(u),350);
+    }catch(e){}
+  }
+
+  // ---------- wake lock ----------
+  let wake=null;
+  async function requestWake(){
+    try{ if('wakeLock' in navigator && !wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>{wake=null;}); } }catch(e){ wake=null; }
+  }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') requestWake(); });
+
+  // ---------- settings UI ----------
+  const panel=$('settings'), form=$('form');
+  const f={mode:$('s-mode'),spot:$('s-spot'),min:$('s-min'),dur:$('s-dur'),names:$('s-names'),grant:$('s-grant'),deny:$('s-deny'),sound:$('s-sound'),voice:$('s-voice')};
+  function fill(){
+    f.mode.value=S.mode; f.spot.value=S.secretSpot||'top-right'; f.min.value=S.minTouches; f.dur.value=S.scanSec; f.names.value=S.names.join('\n');
+    f.grant.value=S.grantLine; f.deny.value=S.denyLine; f.sound.checked=!!S.sound; f.voice.checked=!!S.voice;
+  }
+  $('gear').addEventListener('click',()=>{ fill(); panel.hidden=false; });
+  form.addEventListener('submit',e=>{
+    e.preventDefault();
+    S.mode=f.mode.value;
+    S.secretSpot=f.spot.value;
+    S.minTouches=Math.min(6,Math.max(1,parseInt(f.min.value,10)||3));
+    S.scanSec=Math.min(15,Math.max(1,parseFloat(f.dur.value)||3.5));
+    S.names=f.names.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    S.grantLine=f.grant.value; S.denyLine=f.deny.value;
+    S.sound=f.sound.checked; S.voice=f.voice.checked;
+    save(); panel.hidden=true; resetIdle();
+  });
+  $('s-reset').addEventListener('click',()=>{ S=Object.assign({},DEFAULTS); save(); fill(); });
+  $('s-setspot').addEventListener('click',()=>{ panel.hidden=true; armingSpot=true; $('armhint').hidden=false; });
+  $('s-showspot').addEventListener('click',()=>{ S.secretSpot=f.spot.value; if(S.secretSpot==='custom'&&!S.secretXY) S.secretXY=SPOTS['top-right']; save(); panel.hidden=true; showSpot(5000); });
+  $('s-test').addEventListener('click',()=>{ panel.hidden=true; ensureAudio(); resetIdle(); startScan(); });
+  $('s-full').addEventListener('click',()=>{
+    const el=document.documentElement;
+    const fn=el.requestFullscreen||el.webkitRequestFullscreen;
+    try{ const p=fn&&fn.call(el); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+  });
+
+  if('speechSynthesis' in window){ try{ speechSynthesis.getVoices(); }catch(e){} }
+})();
+</script>
+<script>
+(function(){
+  var sys=document.getElementById('sys'), base=sys.textContent;
+  function mark(t){ sys.textContent=t+' · '+base; }
+  if(!('serviceWorker' in navigator)){ mark('Offline cache unavailable'); return; }
+  navigator.serviceWorker.register('sw.js').then(function(reg){
+    function check(){
+      caches.has('handscanner-v2').then(function(ok){ mark(ok?'Offline ready':'Caching…'); });
+    }
+    check();
+    if(reg.installing){ reg.installing.addEventListener('statechange',check); }
+    reg.addEventListener('updatefound',function(){ var w=reg.installing; if(w) w.addEventListener('statechange',check); });
+    setTimeout(check,3000);
+  }).catch(function(){ mark('Offline cache failed'); });
+})();
+</script>
+</body>
+</html>
