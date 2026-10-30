@@ -349,7 +349,7 @@ body{
         <label class="check"><input id="s-voice" type="checkbox"> Spoken verdict (uses the device voice)</label>
       </div>
 
-      <p class="hint">Secret spot: the hand on the plate alone reads DENIED. If one finger is also resting on the secret spot (about a 2-finger-wide circle) at any point during the scan, or touched it within the 6 seconds before the hand landed, it reads GRANTED. That finger never shows a marker on screen. Use <code>{name}</code> in a spoken line to insert the chosen name. On a laptop a single mouse click on the hand runs a full scan (click the secret spot first, then the hand, to see GRANTED); the finger count only applies to a touch screen. Settings are saved on this device.</p>
+      <p class="hint">Secret spot: the hand on the plate alone reads DENIED. If one finger is also resting on the secret spot (about a 2-finger-wide circle) at any point during the scan, or touched it within the 6 seconds before the hand landed, it reads GRANTED. That finger never shows a marker on screen. The two spoken lines ship as recorded audio, which is what plays as long as the text is left as is; if you edit a line, the iPad's own text-to-speech voice reads it instead (less reliable). Use <code>{name}</code> in a spoken line to insert the chosen name. On a laptop a single mouse click on the hand runs a full scan (click the secret spot first, then the hand, to see GRANTED); the finger count only applies to a touch screen. Settings are saved on this device.</p>
 
       <div class="actions">
         <button type="submit">Save &amp; close</button>
@@ -559,7 +559,7 @@ body{
     result.hidden=false;
     log(ok?`Cleared: ${name} (${conf}%)`:`Unauthorized civilian (${conf}%) · security notified`);
     if(ok) sfxGranted(); else sfxDenied();
-    speak((ok?S.grantLine:S.denyLine).replace(/\{name\}/gi,name));
+    announce(ok, (ok?S.grantLine:S.denyLine).replace(/\{name\}/gi,name));
     clearTimeout(autoResetTimer);
     autoResetTimer=setTimeout(resetIdle,12000);
     evaluate();
@@ -599,13 +599,30 @@ body{
 
   // ---------- audio ----------
   let ctx=null;
+  // Pre-recorded verdict lines (bundled + cached by the service worker). Live speech synthesis is only a fallback,
+  // used when the operator has typed a custom spoken line, because iPad text-to-speech is unreliable after idle.
+  const VOICE_FILES={grant:'voice-granted.wav', deny:'voice-denied.wav'};
+  const voiceRaw={}, voiceBuf={};
+  Object.entries(VOICE_FILES).forEach(([k,f])=>{
+    fetch(f).then(r=>r.ok?r.arrayBuffer():Promise.reject(r.status)).then(ab=>{ voiceRaw[k]=ab; decodeVoices(); }).catch(()=>{});
+  });
+  function decodeVoices(){
+    if(!ctx) return;
+    Object.keys(voiceRaw).forEach(k=>{
+      if(voiceBuf[k] || voiceBuf[k+'_pending']) return;
+      voiceBuf[k+'_pending']=true;
+      try{ ctx.decodeAudioData(voiceRaw[k].slice(0), b=>{ voiceBuf[k]=b; }, ()=>{ delete voiceBuf[k+'_pending']; }); }catch(e){ delete voiceBuf[k+'_pending']; }
+    });
+  }
   function ensureAudio(){
     if(!S.sound) return;
     try{
       if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
-      if(ctx.state==='suspended') ctx.resume();
+      if(ctx.state!=='running'){ const p=ctx.resume(); if(p&&p.catch) p.catch(()=>{}); }   // 'suspended' or Safari's 'interrupted'
+      decodeVoices();
     }catch(e){ ctx=null; }
   }
+  window.__handscanner={ get audioState(){ return ctx?ctx.state:'none'; }, get voicesReady(){ return {grant:!!voiceBuf.grant, deny:!!voiceBuf.deny}; } };
   function tone(freq,dur,type,gain,when,slideTo){
     if(!ctx||!S.sound) return;
     const o=ctx.createOscillator(), g=ctx.createGain(), t=ctx.currentTime+(when||0);
@@ -637,6 +654,23 @@ body{
   function sfxDenied(){ stopHum(); for(let i=0;i<3;i++) tone(110,0.18,'sawtooth',0.12,i*0.26,90); }
   function sfxWarn(){ stopHum(); tone(520,0.25,'square',0.05,0,380); }
 
+  function announce(ok, text){
+    if(!S.voice) return;
+    const key=ok?'grant':'deny';
+    const isDefaultLine=(ok?S.grantLine===DEFAULTS.grantLine:S.denyLine===DEFAULTS.denyLine);
+    if(isDefaultLine && S.sound && ctx && voiceBuf[key]){
+      try{
+        const src=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+        src.buffer=voiceBuf[key]; src.playbackRate.value=0.96;
+        f.type='lowpass'; f.frequency.value=3400;           // PA-speaker colour
+        g.gain.value=1.0;
+        src.connect(f).connect(g).connect(ctx.destination);
+        src.start(ctx.currentTime+0.45);
+        return;
+      }catch(e){}
+    }
+    speak(text);
+  }
   function speak(text){
     if(!S.voice||!('speechSynthesis' in window)||!text) return;
     try{
@@ -655,7 +689,7 @@ body{
   async function requestWake(){
     try{ if('wakeLock' in navigator && !wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>{wake=null;}); } }catch(e){ wake=null; }
   }
-  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') requestWake(); });
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ requestWake(); ensureAudio(); } });
 
   // ---------- settings UI ----------
   const panel=$('settings'), form=$('form');
@@ -704,7 +738,7 @@ body{
   if(!('serviceWorker' in navigator)){ mark('Offline cache unavailable'); return; }
   navigator.serviceWorker.register('sw.js').then(function(reg){
     function check(){
-      caches.has('handscanner-v7').then(function(ok){ mark(ok?'Offline ready':'Caching…'); });
+      caches.has('handscanner-v8').then(function(ok){ mark(ok?'Offline ready':'Caching…'); });
     }
     check();
     if(reg.installing){ reg.installing.addEventListener('statechange',check); }

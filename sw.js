@@ -1,9 +1,10 @@
 // Offline cache for the hand scanner. Bump CACHE whenever index.html or an asset changes.
-const CACHE = 'handscanner-v7';
+const CACHE = 'handscanner-v8';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
   './fonts/orbitron.woff2', './fonts/sharetechmono.woff2',
-  './icon-180.png', './icon-512.png'
+  './icon-180.png', './icon-512.png',
+  './voice-granted.wav', './voice-denied.wav'
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
